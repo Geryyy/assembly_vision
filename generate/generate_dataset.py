@@ -46,7 +46,8 @@ def compute_2d_bounding_box(obj):
     # Reorder the coordinates to ensure y1 >= y0
     y0, y1 = sorted([min_y_pixel, max_y_pixel])
 
-    return [(min_x_pixel, y0), (max_x_pixel, y1)]
+    # return [(min_x_pixel, y0), (max_x_pixel, y1)]
+    return min_x_pixel, y0, max_x_pixel, y1
 
 
 def set_random_camera_pose(config):
@@ -82,7 +83,7 @@ def set_random_lighting(config):
         bpy.ops.object.light_add(type=lighting_config['light_type'], align='WORLD', location=(0, 0, lighting_config['light_distance']))
         light = bpy.context.active_object
         light.data.color = lighting_config['light_color']
-        
+
         if lighting_config['light_type'] == "AREA":
             light.data.size = lighting_config['light_size']
 
@@ -239,45 +240,70 @@ def generate_dataset(config):
     os.makedirs(output_dir, exist_ok=True)
     image_dir = os.path.join(output_dir, 'images')
     label_dir = os.path.join(output_dir, 'labels')
-    labeled_image_dir = os.path.join(output_dir, 'labeled_images')
+    image_labeled_dir = os.path.join(output_dir, 'images_labeled')
     os.makedirs(image_dir, exist_ok=True)
     os.makedirs(label_dir, exist_ok=True)
-    os.makedirs(labeled_image_dir, exist_ok=True)
+    os.makedirs(image_labeled_dir, exist_ok=True)
 
-    # Iterate through all .dae files in the model_dir
-    for model_path in glob.glob(os.path.join(config['model_dir'], '*.dae')):
-        obj = import_dae_object(model_path)
-        model_name = os.path.splitext(os.path.basename(model_path))[0]
+    # Initialize the class ID counter
+    class_id_counter = 0
 
-        for i in range(config['num_samples']):
-            set_random_camera_pose(config)
-            set_random_lighting(config)
-            set_random_background(background_plane, config)
-            apply_random_texture(obj, config)
-            set_random_pose(obj, config['pose_randomization']['location'], config['pose_randomization']['rotation'])
+    # Open the class mapping file
+    with open(os.path.join(output_dir, 'class_mapping.txt'), 'w') as class_mapping_file:
+        # Iterate through all .dae files in the model_dir
+        for model_path in glob.glob(os.path.join(config['model_dir'], '*.dae')):
+            obj = import_dae_object(model_path)
+            model_name = os.path.splitext(os.path.basename(model_path))[0]
 
-            output_prefix = f"{model_name}_{i:04}"
-            render_image(os.path.join(image_dir, f"{output_prefix}.png"))
+            # Assign a unique class ID to the current object
+            current_class_id = class_id_counter
+            class_id_counter += 1
 
-            bounding_box_2d = compute_2d_bounding_box(obj)
-            pose = np.array([obj.location, obj.rotation_euler], dtype=np.float32)
-            label_data = {
-                '2d_bounding_box': bounding_box_2d,
-                'pose': pose
-            }
-            np.save(os.path.join(label_dir, f"{output_prefix}.npy"), label_data)
+            # Write the class ID and object's filename to the class mapping file
+            class_mapping_file.write(f"{current_class_id} {model_name}\n")
 
-            img = Image.open(os.path.join(image_dir, f"{output_prefix}.png"))
-            draw = ImageDraw.Draw(img)
-            bbox_color = (255, 0, 0)
-            draw.rectangle(bounding_box_2d, outline=bbox_color, width=2)
-            img.save(os.path.join(labeled_image_dir, f"{output_prefix}.png"))
+            for i in range(config['num_samples']):
+                set_random_camera_pose(config)
+                set_random_lighting(config)
+                set_random_background(background_plane, config)
+                apply_random_texture(obj, config)
+                set_random_pose(obj, config['pose_randomization']['location'], config['pose_randomization']['rotation'])
 
-        # Delete the current object before importing the next one
-        bpy.ops.object.select_all(action='DESELECT')
-        obj.select_set(True)
-        bpy.ops.object.delete()
+                output_prefix = f"{model_name}_{i:04}"
+                output_image_path = os.path.join(image_dir, f"{output_prefix}.png")
+                render_image(output_image_path)
 
+                # Save the object's 2D bounding box in YOLO format
+                img_width, img_height = config['resolution_x'], config['resolution_y']
+                bounding_box_2d = compute_2d_bounding_box(obj)
+                yolo_bbox = convert_bbox_to_yolo_format(bounding_box_2d, img_width, img_height)
+
+                with open(os.path.join(label_dir, f"{output_prefix}.txt"), "w") as label_file:
+                    label_file.write(f"{current_class_id} {yolo_bbox[0]} {yolo_bbox[1]} {yolo_bbox[2]} {yolo_bbox[3]}\n")
+
+
+                 # Save the image with the bounding box
+                img = Image.open(output_image_path)
+                draw = ImageDraw.Draw(img)
+                bbox_color = (255, 0, 0)  # Red color for the bounding box
+                draw.rectangle(bounding_box_2d, outline=bbox_color, width=2)  # Change width as needed
+                
+                # Save the image with the bounding box to the images_labeled folder
+                img.save(os.path.join(image_labeled_dir, f"{output_prefix}_with_bbox.png"))
+
+
+            # Delete the current object before importing the next one
+            bpy.ops.object.select_all(action='DESELECT')
+            obj.select_set(True)
+            bpy.ops.object.delete()
+
+def convert_bbox_to_yolo_format(bbox, img_width, img_height):
+    x1, y1, x2, y2 = bbox
+    x_center = (x1 + x2) / (2 * img_width)
+    y_center = (y1 + y2) / (2 * img_height)
+    width = (x2 - x1) / img_width
+    height = (y2 - y1) / img_height
+    return [x_center, y_center, width, height]
 
 
 
