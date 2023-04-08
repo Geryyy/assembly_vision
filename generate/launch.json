@@ -1,0 +1,13 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Python: Generate Dataset",
+            "type": "python",
+            "request": "launch",
+            "program": "${workspaceFolder}/generate/generate_dataset.py",
+            "console": "integratedTerminal",
+            "cwd": "${fileDirname}"
+        }
+    ]
+}

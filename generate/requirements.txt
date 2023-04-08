@@ -1,0 +1,8 @@
+bpy
+torch
+kornia
+opencv-python
+PyYAML
+numpy
+mathutils
+pillow

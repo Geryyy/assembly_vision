@@ -1,0 +1,16 @@
+model_dir: "../assets/"
+output_dir: "out/"
+num_samples: 1
+backgrounds_dir: "/home/gebmer/Pictures/unlabeled2017/"
+textures_dir: "/home/gebmer/Pictures/dtd-r1.0.1/dtd/images/porous/"
+resolution_x: 640
+resolution_y: 480
+camera_distance: 2.0
+background_distance: 10.0
+pose_randomization:
+  location:
+    min: [-0.5, -0.5, 0]
+    max: [0.5, 0.5, 1]
+  rotation:
+    min: [0, 0, 0]
+    max: [3.1415, 3.1415, 3.1415]
