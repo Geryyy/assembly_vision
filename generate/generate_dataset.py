@@ -49,8 +49,49 @@ def compute_2d_bounding_box(obj):
     return [(min_x_pixel, y0), (max_x_pixel, y1)]
 
 
+def set_random_camera_pose(config):
+    # Set up the camera
+    camera_config = config['camera']
+    min_location = camera_config['location_min']
+    max_location = camera_config['location_max']
+    min_rotation = camera_config['rotation_min']
+    max_rotation = camera_config['rotation_max']
+    
+    random_location = [
+        random.uniform(min_location[0], max_location[0]),
+        random.uniform(min_location[1], max_location[1]),
+        random.uniform(min_location[2], max_location[2])
+    ]
+    
+    random_rotation = [
+        random.uniform(min_rotation[0], max_rotation[0]),
+        random.uniform(min_rotation[1], max_rotation[1]),
+        random.uniform(min_rotation[2], max_rotation[2])
+    ]
 
-def setup_scene():
+    bpy.ops.object.camera_add(location=random_location)
+    cam = bpy.context.active_object
+    cam.rotation_euler = tuple(random_rotation)
+    cam.data.type = 'PERSP'
+    bpy.context.scene.camera = cam
+
+def set_random_lighting(config):
+    # Set up the lighting
+    lighting_config = config['lighting']
+    for _ in range(lighting_config['num_lights']):
+        bpy.ops.object.light_add(type=lighting_config['light_type'], align='WORLD', location=(0, 0, lighting_config['light_distance']))
+        light = bpy.context.active_object
+        light.data.color = lighting_config['light_color']
+        
+        if lighting_config['light_type'] == "AREA":
+            light.data.size = lighting_config['light_size']
+
+        if lighting_config['type'] == 'random':
+            light.data.energy = random.uniform(lighting_config['light_energy_min'], lighting_config['light_energy_max'])
+        else:
+            light.data.energy = lighting_config['light_energy_min']
+
+def setup_scene(config):
     bpy.ops.object.select_all(action='SELECT')
     bpy.ops.object.delete()
 
@@ -60,18 +101,8 @@ def setup_scene():
     bpy.context.scene.render.resolution_y = config['resolution_y']
     bpy.context.scene.render.image_settings.file_format = 'PNG'
 
-    # Set up the camera
-    bpy.ops.object.camera_add(location=(0, 0, config['camera_distance']))
-    cam = bpy.context.active_object
-    cam.rotation_euler = (0, 0, 0)
-    cam.data.type = 'PERSP'
-    bpy.context.scene.camera = cam
-
-    # Set up the lighting
-    bpy.ops.object.light_add(type='SUN', align='WORLD', location=(0, 0, 10))
-    light = bpy.context.active_object
-    light.data.energy = 3
-
+    set_random_lighting(config)
+    set_random_camera_pose(config)
 
 
 def import_dae_object(file_path):
@@ -200,9 +231,18 @@ def set_random_pose(obj, location_range, rotation_range):
 
 
 def generate_dataset(config):
-    setup_scene()
-
+    setup_scene(config)
     background_plane = create_background_plane()
+
+    # Create output subdirectories
+    output_dir = config['output_dir']
+    os.makedirs(output_dir, exist_ok=True)
+    image_dir = os.path.join(output_dir, 'images')
+    label_dir = os.path.join(output_dir, 'labels')
+    labeled_image_dir = os.path.join(output_dir, 'labeled_images')
+    os.makedirs(image_dir, exist_ok=True)
+    os.makedirs(label_dir, exist_ok=True)
+    os.makedirs(labeled_image_dir, exist_ok=True)
 
     # Iterate through all .dae files in the model_dir
     for model_path in glob.glob(os.path.join(config['model_dir'], '*.dae')):
@@ -210,56 +250,33 @@ def generate_dataset(config):
         model_name = os.path.splitext(os.path.basename(model_path))[0]
 
         for i in range(config['num_samples']):
+            set_random_camera_pose(config)
+            set_random_lighting(config)
             set_random_background(background_plane, config)
-    
             apply_random_texture(obj, config)
             set_random_pose(obj, config['pose_randomization']['location'], config['pose_randomization']['rotation'])
 
-            # Save the rendered image with the model name
-            # output_image_path = os.path.join(config['output_dir'], f'{model_name}_image_{i:04d}.png')
-            # render_image(output_image_path)
+            output_prefix = f"{model_name}_{i:04}"
+            render_image(os.path.join(image_dir, f"{output_prefix}.png"))
 
-            output_prefix = f"{os.path.splitext(model_name)[0]}_{i:04}"
-            output_dir = config['output_dir']
-            output_path = os.path.join(output_dir, f"{output_prefix}.png")  # Define output_path here
-            render_image(output_path)
-
-            # Save the object's 2D bounding box and 3D pose information as a label
-            output_label_path = os.path.join(config['output_dir'], f'{model_name}_label_{i:04d}.txt')
-            with open(output_label_path, 'w') as label_file:
-                bounding_box_2d = compute_2d_bounding_box(obj)
-                label_file.write(f"2d_bounding_box: {bounding_box_2d}\n")
-                label_file.write(f"location: {obj.location}\n")
-                label_file.write(f"rotation_euler: {obj.rotation_euler}\n")
-
-            output_label_path = os.path.join(config['output_dir'], f'{model_name}_label_{i:04d}.npy')
             bounding_box_2d = compute_2d_bounding_box(obj)
             pose = np.array([obj.location, obj.rotation_euler], dtype=np.float32)
             label_data = {
                 '2d_bounding_box': bounding_box_2d,
                 'pose': pose
             }
-            np.save(output_label_path, label_data)
+            np.save(os.path.join(label_dir, f"{output_prefix}.npy"), label_data)
 
-
-            
-        
-
-            # Save the rendered image with the bounding box
-            # Draw bounding boxes on the rendered image
-            img = Image.open(output_path)
+            img = Image.open(os.path.join(image_dir, f"{output_prefix}.png"))
             draw = ImageDraw.Draw(img)
-            bbox_color = (255, 0, 0)  # Red color for the bounding box
-            draw.rectangle(bounding_box_2d, outline=bbox_color, width=2)  # Change width as needed
-            
-            # Save the image with the bounding box
-            img.save(os.path.join(output_dir, f"{output_prefix}_with_bbox.png"))
+            bbox_color = (255, 0, 0)
+            draw.rectangle(bounding_box_2d, outline=bbox_color, width=2)
+            img.save(os.path.join(labeled_image_dir, f"{output_prefix}.png"))
 
         # Delete the current object before importing the next one
         bpy.ops.object.select_all(action='DESELECT')
         obj.select_set(True)
         bpy.ops.object.delete()
-
 
 
 

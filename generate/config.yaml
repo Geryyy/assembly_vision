@@ -6,12 +6,29 @@ texture_dir: "/home/gebmer/Pictures/dtd-r1.0.1/dtd/images/porous/"
 image_extensions: [".png", ".jpg", ".jpeg"]
 resolution_x: 640
 resolution_y: 480
-camera_distance: 2.0
+
 background_distance: 10.0
+# lighting
+lighting:
+  type: "random" # anything else..
+  light_type: "AREA" # SUN
+  num_lights: 1
+  light_distance: 1.0
+  light_size: 1
+  light_color: [1, 1, 1]
+  light_energy_min: 0.01
+  light_energy_max: 10.0
+# camera
+camera:
+  location_min: [-0.1, -0.1, 2.5]
+  location_max: [0.1, 0.1, 3]
+  rotation_min: [-0.1, -0.1, -0.1]
+  rotation_max: [0.1, 0.1, 0.1]
+
 pose_randomization:
   location:
-    min: [-0.5, -0.5, 0]
-    max: [0.5, 0.5, 1]
+    min: [-0.25, -0.25, -1]
+    max: [0.25, 0.25, 2]
   rotation:
     min: [0, 0, 0]
     max: [3.1415, 3.1415, 3.1415]
