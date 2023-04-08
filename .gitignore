@@ -76,3 +76,6 @@ Pipfile.lock
 *.log
 *.iml
 .idea/
+
+
+out/
