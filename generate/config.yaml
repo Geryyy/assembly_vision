@@ -2,7 +2,8 @@ model_dir: "../assets/"
 output_dir: "out/"
 num_samples: 1
 backgrounds_dir: "/home/gebmer/Pictures/unlabeled2017/"
-textures_dir: "/home/gebmer/Pictures/dtd-r1.0.1/dtd/images/porous/"
+texture_dir: "/home/gebmer/Pictures/dtd-r1.0.1/dtd/images/porous/"
+image_extensions: [".png", ".jpg", ".jpeg"]
 resolution_x: 640
 resolution_y: 480
 camera_distance: 2.0

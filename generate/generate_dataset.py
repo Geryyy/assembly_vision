@@ -10,6 +10,14 @@ from PIL import Image, ImageDraw
 import bpy_extras.object_utils
 
 
+
+
+def get_images_in_directory(directory):
+    image_extensions = ['.jpg', '.jpeg', '.png', '.bmp', '.gif']
+    images = [os.path.join(directory, f) for f in os.listdir(directory) if os.path.isfile(os.path.join(directory, f)) and any(f.lower().endswith(ext) for ext in image_extensions)]
+    return images
+
+
 def compute_2d_bounding_box(obj):
     camera = bpy.context.scene.camera
     render = bpy.context.scene.render
@@ -106,58 +114,66 @@ def set_random_background(plane, config):
         plane.data.materials[0] = mat
 
 
+def apply_texture_to_object(obj, image_path):
+    # Set the object as active and selected
+    bpy.context.view_layer.objects.active = obj
+    bpy.ops.object.select_all(action='DESELECT')
+    obj.select_set(True)
 
-def apply_random_texture(obj, config):
-    print("adding texture")
-    # Load a random texture image
-    texture_images = glob.glob(os.path.join(config['textures_dir'], '*.jpg'))
-    texture_image = random.choice(texture_images)
-    img = bpy.data.images.load(texture_image)
+    # Switch to edit mode and unwrap UVs using Smart UV Project with Scale to Bounds
+    bpy.ops.object.mode_set(mode='EDIT')
+    bpy.ops.mesh.select_all(action='SELECT')
+    bpy.ops.uv.smart_project(scale_to_bounds=True)
+    bpy.ops.object.mode_set(mode='OBJECT')
 
-    # print selected image name with additional text
-    print("selected image: " + texture_image)
+
+
+    # Load the image texture
+    image_name = os.path.basename(image_path)
+    image = bpy.data.images.load(image_path)
 
     # Create a new material
-    mat = bpy.data.materials.new(name="GeneratedMaterial")
-    mat.use_nodes = True
-    nodes = mat.node_tree.nodes
+    material = bpy.data.materials.new(f"TextureMaterial_{image_name}")
+    material.use_nodes = True
+    nodes = material.node_tree.nodes
+    links = material.node_tree.links
 
-    # Remove default diffuse node
-    nodes.remove(nodes.get('Principled BSDF'))
+    # Clear default nodes
+    for node in nodes:
+        nodes.remove(node)
 
-    # Add image texture node
-    texture_node = nodes.new('ShaderNodeTexImage')
-    texture_node.image = img
-    texture_node.location = -300, 0
+    # Create shader nodes
+    texture_node = nodes.new("ShaderNodeTexImage")
+    texture_node.image = image
+    texture_node.location = (-300, 300)
 
-    # Add diffuse shader node
-    diffuse_node = nodes.new('ShaderNodeBsdfDiffuse')
-    diffuse_node.location = 0, 0
+    uv_map_node = nodes.new("ShaderNodeUVMap")
+    uv_map_node.location = (-500, 300)
 
-    # Connect image texture to diffuse shader
-    links = mat.node_tree.links
-    link = links.new(texture_node.outputs['Color'], diffuse_node.inputs['Color'])
+    principled_node = nodes.new("ShaderNodeBsdfPrincipled")
+    principled_node.location = (100, 300)
 
-    # Connect diffuse shader to material output
-    material_output = nodes.get('Material Output')
-    link = links.new(diffuse_node.outputs['BSDF'], material_output.inputs['Surface'])
+    output_node = nodes.new("ShaderNodeOutputMaterial")
+    output_node.location = (300, 300)
 
-    # Add UV map if not present
-    if not obj.data.uv_layers:
-        print("creating uv map")
-        bpy.context.view_layer.objects.active = obj
-        bpy.ops.object.mode_set(mode='EDIT')
-        bpy.ops.mesh.select_all(action='SELECT')
-        bpy.ops.uv.unwrap(method='ANGLE_BASED', margin=0.001)
-        bpy.ops.object.mode_set(mode='OBJECT')
-    else:
-        print("uv map already exists")
+    # Connect the nodes
+    links.new(uv_map_node.outputs["UV"], texture_node.inputs["Vector"])
+    links.new(texture_node.outputs["Color"], principled_node.inputs["Base Color"])
+    links.new(principled_node.outputs["BSDF"], output_node.inputs["Surface"])
 
-    # Assign material to the object
-    if obj.data.materials:
-        obj.data.materials[0] = mat
-    else:
-        obj.data.materials.append(mat)
+    # Remove existing materials
+    obj.active_material_index = 0
+    while len(obj.material_slots) > 0:
+        bpy.ops.object.material_slot_remove()
+
+    # Assign the new material to the object
+    obj.data.materials.append(material)
+
+def apply_random_texture(obj, config):
+
+    # Select a random texture image from the directory
+    texture_image = os.path.join(config['texture_dir'], random.choice(os.listdir(config['texture_dir'])))
+    apply_texture_to_object(obj, texture_image)
 
 
 
@@ -195,12 +211,18 @@ def generate_dataset(config):
 
         for i in range(config['num_samples']):
             set_random_background(background_plane, config)
+    
             apply_random_texture(obj, config)
             set_random_pose(obj, config['pose_randomization']['location'], config['pose_randomization']['rotation'])
 
             # Save the rendered image with the model name
-            output_image_path = os.path.join(config['output_dir'], f'{model_name}_image_{i:04d}.png')
-            render_image(output_image_path)
+            # output_image_path = os.path.join(config['output_dir'], f'{model_name}_image_{i:04d}.png')
+            # render_image(output_image_path)
+
+            output_prefix = f"{os.path.splitext(model_name)[0]}_{i:04}"
+            output_dir = config['output_dir']
+            output_path = os.path.join(output_dir, f"{output_prefix}.png")  # Define output_path here
+            render_image(output_path)
 
             # Save the object's 2D bounding box and 3D pose information as a label
             output_label_path = os.path.join(config['output_dir'], f'{model_name}_label_{i:04d}.txt')
@@ -220,10 +242,7 @@ def generate_dataset(config):
             np.save(output_label_path, label_data)
 
 
-            output_prefix = f"{os.path.splitext(model_name)[0]}_{i:04}"
-            output_dir = config['output_dir']
-            output_path = os.path.join(output_dir, f"{output_prefix}.png")  # Define output_path here
-            render_image(output_path)
+            
         
 
             # Save the rendered image with the bounding box
