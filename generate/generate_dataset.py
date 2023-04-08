@@ -108,18 +108,57 @@ def set_random_background(plane, config):
 
 
 def apply_random_texture(obj, config):
+    print("adding texture")
+    # Load a random texture image
     texture_images = glob.glob(os.path.join(config['textures_dir'], '*.jpg'))
-
-    # print len of texture_images with text 
-    print(f"Length of texture_images: {len(texture_images)}")  # Add this line
-
     texture_image = random.choice(texture_images)
-
     img = bpy.data.images.load(texture_image)
-    texture_node = obj.data.materials[0].node_tree.nodes.new(type='ShaderNodeTexImage')
+
+    # print selected image name with additional text
+    print("selected image: " + texture_image)
+
+    # Create a new material
+    mat = bpy.data.materials.new(name="GeneratedMaterial")
+    mat.use_nodes = True
+    nodes = mat.node_tree.nodes
+
+    # Remove default diffuse node
+    nodes.remove(nodes.get('Principled BSDF'))
+
+    # Add image texture node
+    texture_node = nodes.new('ShaderNodeTexImage')
     texture_node.image = img
-    shader_node = obj.data.materials[0].node_tree.nodes['Principled BSDF']
-    obj.data.materials[0].node_tree.links.new(texture_node.outputs['Color'], shader_node.inputs['Base Color'])
+    texture_node.location = -300, 0
+
+    # Add diffuse shader node
+    diffuse_node = nodes.new('ShaderNodeBsdfDiffuse')
+    diffuse_node.location = 0, 0
+
+    # Connect image texture to diffuse shader
+    links = mat.node_tree.links
+    link = links.new(texture_node.outputs['Color'], diffuse_node.inputs['Color'])
+
+    # Connect diffuse shader to material output
+    material_output = nodes.get('Material Output')
+    link = links.new(diffuse_node.outputs['BSDF'], material_output.inputs['Surface'])
+
+    # Add UV map if not present
+    if not obj.data.uv_layers:
+        print("creating uv map")
+        bpy.context.view_layer.objects.active = obj
+        bpy.ops.object.mode_set(mode='EDIT')
+        bpy.ops.mesh.select_all(action='SELECT')
+        bpy.ops.uv.unwrap(method='ANGLE_BASED', margin=0.001)
+        bpy.ops.object.mode_set(mode='OBJECT')
+    else:
+        print("uv map already exists")
+
+    # Assign material to the object
+    if obj.data.materials:
+        obj.data.materials[0] = mat
+    else:
+        obj.data.materials.append(mat)
+
 
 
 def render_image(output_path):

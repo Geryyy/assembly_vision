@@ -1,0 +1,64 @@
+# Assembly Vision
+
+Assembly Vision is a project for generating synthetic datasets for object detection and pose estimation in large-scale robotic assembly tasks. The project uses Blender and Python to create images with various objects, textures, and backgrounds. It generates labels for detection and pose estimation tasks and can be used to train machine learning models.
+
+## Requirements
+
+- Python 3.8 or higher
+- Blender 2.93 or higher
+
+## Installation
+
+1. Clone the repository:
+```bash
+git clone https://github.com/your_username/assembly_vision.git
+```
+
+2. Change directory to the cloned repository:
+```bash
+cd assembly_vision
+```
+
+3. Create a virtual environment:
+```bash
+python3 -m venv venv
+```
+
+4. Activate the virtual environment:
+
+- On Linux or macOS:
+
+```bash
+source venv/bin/activate
+```
+
+5. Install the required packages:
+```bash
+pip install -r requirements.txt
+```
+
+## Usage
+
+1. Configure the `config.yaml` file to set the model paths, output directories, background and texture paths, and other parameters.
+
+2. Run the `generate_dataset.py` script:
+```bash
+python generate_dataset.py
+```
+
+
+This will generate the synthetic dataset with images, labels, and other metadata.
+
+## Contributing
+
+If you'd like to contribute to this project, please open an issue or submit a pull request.
+
+## License
+
+This project is licensed under the MIT License. See the `LICENSE` file for details.
+
+
+
+
+
+
