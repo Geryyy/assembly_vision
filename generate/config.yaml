@@ -1,9 +1,12 @@
 model_dir: "../assets/"
-output_dir: "/home/gebmer/repos/assembly_vision/dataset"
-num_samples: 20
+# output_dir: "/home/gebmer/repos/assembly_vision/dataset"
+output_dir: "/home/geraldebmer/repos/assembly_vision/dataset"
+num_samples: 200
 validation_split: 0.2
-backgrounds_dir: "/home/gebmer/Pictures/unlabeled2017/"
-texture_dir: "/home/gebmer/Pictures/dtd-r1.0.1/dtd/images/porous/"
+# backgrounds_dir: "/home/gebmer/Pictures/unlabeled2017/"
+# texture_dir: "/home/gebmer/Pictures/dtd-r1.0.1/dtd/images/porous/"
+backgrounds_dir: "/home/geraldebmer/Pictures/unlabeled2017/"
+texture_dir: "/home/geraldebmer/Pictures/dtd-r1.0.1/dtd/images/porous/"
 image_extensions: [".png", ".jpg", ".jpeg"]
 resolution_x: 640
 resolution_y: 480

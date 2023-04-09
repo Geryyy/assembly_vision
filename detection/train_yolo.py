@@ -6,9 +6,10 @@ import cv2
 import matplotlib.pyplot as plt
 from matplotlib.patches import Rectangle
 
+EPOCHS = 100
 
 def train(model, dataset_config):
-    model.train(data= dataset_config, epochs=3)  # train the model
+    model.train(data= dataset_config, epochs=EPOCHS)  # train the model
     metrics = model.val()  # evaluate model performance on the validation set
     # results = model("https://ultralytics.com/images/bus.jpg")  # predict on an image
     success = model.export(format="onnx")  # export the model to ONNX format
@@ -35,16 +36,18 @@ def validate(model, dataset_config, dataset_path):
 if __name__=="__main__":
     # Load a model
     # model = YOLO("yolov8n.yaml")  # build a new model from scratch
-    model = YOLO("yolov8n.pt")  # load a pretrained model (recommended for training)
+    # model = YOLO("yolov8n.pt")  # load a pretrained model (recommended for training)
 
     # pretrained_model = "/home/gebmer/repos/assembly_vision/runs/detect/train4/weights/best.pt"
-    # model = YOLO(pretrained_model)
+    pretrained_model = "/home/geraldebmer/repos/assembly_vision/runs/detect/train6/weights/best.pt"
+    model = YOLO(pretrained_model)
 
     # Use the model
-    dataset_path = "/home/gebmer/repos/assembly_vision/dataset/"
+    # dataset_path = "/home/gebmer/repos/assembly_vision/dataset/"
+    dataset_path = "/home/geraldebmer/repos/assembly_vision/dataset/"
     dataset_config = dataset_path + "classes.yaml"
 
-    metrics, success = train(model, dataset_config)
+    # metrics, success = train(model, dataset_config)
     # print(metrics)
     # print(success)
     
@@ -90,7 +93,7 @@ if __name__=="__main__":
                 cv2.putText(img, text, (x1, y1 - 3), font, font_scale, (255, 255, 255), font_thickness, cv2.LINE_AA)
 
         # Display the image with bounding boxes and annotations
-        if img != None:
+        if img.any() != None:
             cv2.imshow("Image", img)
             cv2.waitKey(0)
             cv2.destroyAllWindows()

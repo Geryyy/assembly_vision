@@ -6,3 +6,4 @@ PyYAML
 numpy
 mathutils
 pillow
+ultralytics
