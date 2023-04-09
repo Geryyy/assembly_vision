@@ -120,6 +120,18 @@ def set_random_camera_pose(config):
 def set_random_lighting(config):
     # Set up the lighting
     lighting_config = config['lighting']
+    
+    # Deselect all objects
+    bpy.ops.object.select_all(action='DESELECT')
+
+    # Select all light objects in the current scene
+    for obj in bpy.context.scene.objects:
+        if obj.type == 'LIGHT':
+            obj.select_set(True)
+
+    # Delete selected light objects
+    bpy.ops.object.delete()
+
     for _ in range(lighting_config['num_lights']):
         bpy.ops.object.light_add(type=lighting_config['light_type'], align='WORLD', location=(0, 0, lighting_config['light_distance']))
         light = bpy.context.active_object
@@ -264,9 +276,9 @@ def set_random_pose(obj, location_range, rotation_range):
     )
 
     rotation = (
-        math.radians(random.uniform(rotation_range['min'][0], rotation_range['max'][0])),
-        math.radians(random.uniform(rotation_range['min'][1], rotation_range['max'][1])),
-        math.radians(random.uniform(rotation_range['min'][2], rotation_range['max'][2])),
+        (random.uniform(rotation_range['min'][0], rotation_range['max'][0])),
+        (random.uniform(rotation_range['min'][1], rotation_range['max'][1])),
+        (random.uniform(rotation_range['min'][2], rotation_range['max'][2])),
     )
 
     obj.location = location
