@@ -8,6 +8,9 @@ import numpy as np
 from mathutils import Vector
 from PIL import Image, ImageDraw  
 import bpy_extras.object_utils
+import cv2
+from pathlib import Path
+import shutil
 
 
 
@@ -16,6 +19,13 @@ def get_images_in_directory(directory):
     image_extensions = ['.jpg', '.jpeg', '.png', '.bmp', '.gif']
     images = [os.path.join(directory, f) for f in os.listdir(directory) if os.path.isfile(os.path.join(directory, f)) and any(f.lower().endswith(ext) for ext in image_extensions)]
     return images
+
+def clip_coordinates(x1, y1, x2, y2, img_width, img_height):
+    x1 = max(0, min(x1, img_width - 1))
+    y1 = max(0, min(y1, img_height - 1))
+    x2 = max(0, min(x2, img_width - 1))
+    y2 = max(0, min(y2, img_height - 1))
+    return x1, y1, x2, y2
 
 
 def compute_2d_bounding_box(obj):
@@ -48,6 +58,37 @@ def compute_2d_bounding_box(obj):
 
     # return [(min_x_pixel, y0), (max_x_pixel, y1)]
     return min_x_pixel, y0, max_x_pixel, y1
+
+
+
+def convert_bbox_to_yolo_format(bbox, img_width, img_height):
+    x1, y1, x2, y2 = bbox
+    x1, y1, x2, y2 = clip_coordinates(x1, y1, x2, y2, img_width, img_height)
+    x_center = (x1 + x2) / (2 * img_width)
+    y_center = (y1 + y2) / (2 * img_height)
+    width = (x2 - x1) / img_width
+    height = (y2 - y1) / img_height
+    return [x_center, y_center, width, height]
+
+
+def world_to_camera_view(scene, world_coordinates):
+    """
+    Convert world coordinates to camera view (2D screen-space) coordinates.
+
+    :param scene: The scene object
+    :param world_coordinates: The world coordinates of the point (x, y, z)
+    :return: 2D coordinates of the point in camera view
+    """
+    camera = scene.camera
+    co_2d = bpy_extras.object_utils.world_to_camera_view(scene, camera, world_coordinates)
+    render_scale = scene.render.resolution_percentage / 100
+    render_size = (
+        int(scene.render.resolution_x * render_scale),
+        int(scene.render.resolution_y * render_scale),
+    )
+
+    return co_2d.x * render_size[0], render_size[1] - co_2d.y * render_size[1]
+
 
 
 def set_random_camera_pose(config):
@@ -112,7 +153,7 @@ def import_dae_object(file_path):
     return obj
 
 
-def create_background_plane():
+def create_background_plane(config):
     bpy.ops.mesh.primitive_plane_add(size=10, 
                 enter_editmode=False, 
                 align='WORLD', 
@@ -127,6 +168,7 @@ def create_background_plane():
 def set_random_background(plane, config):
     background_images = glob.glob(os.path.join(config['backgrounds_dir'], '*.jpg'))
     background_image = random.choice(background_images)
+    print("ranom background image: ", background_image)
 
     img = bpy.data.images.load(background_image)
     mat = bpy.data.materials.new(name="Background_Material")
@@ -231,79 +273,158 @@ def set_random_pose(obj, location_range, rotation_range):
     obj.rotation_euler = rotation
 
 
+def draw_3d_axes(image_path, obj, output_folder, scene):
+    img = Image.open(image_path)
+    draw = ImageDraw.Draw(img)
+
+    origin = np.array(obj.location)
+    axes_length = 1.0
+
+    # Convert Blender Matrix to NumPy array
+    matrix_world_np = np.array(obj.matrix_world.to_3x3())
+
+    x_axis = origin + matrix_world_np @ np.array([axes_length, 0, 0])
+    y_axis = origin + matrix_world_np @ np.array([0, axes_length, 0])
+    z_axis = origin + matrix_world_np @ np.array([0, 0, axes_length])
+
+    origin_2d = world_to_camera_view(scene, Vector(origin))
+    x_axis_2d = world_to_camera_view(scene, Vector(x_axis))
+    y_axis_2d = world_to_camera_view(scene, Vector(y_axis))
+    z_axis_2d = world_to_camera_view(scene, Vector(z_axis))
+
+    draw.line((*origin_2d, *x_axis_2d), fill=(255, 0, 0), width=2)
+    draw.line((*origin_2d, *y_axis_2d), fill=(0, 255, 0), width=2)
+    draw.line((*origin_2d, *z_axis_2d), fill=(0, 0, 255), width=2)
+
+    output_path = os.path.join(output_folder, os.path.basename(image_path))
+    img.save(output_path)
+
+
 def generate_dataset(config):
-    setup_scene(config)
-    background_plane = create_background_plane()
-
-    # Create output subdirectories
+    # Clear the dataset folder
     output_dir = config['output_dir']
-    os.makedirs(output_dir, exist_ok=True)
-    image_dir = os.path.join(output_dir, 'images')
-    label_dir = os.path.join(output_dir, 'labels')
-    image_labeled_dir = os.path.join(output_dir, 'images_labeled')
-    os.makedirs(image_dir, exist_ok=True)
-    os.makedirs(label_dir, exist_ok=True)
-    os.makedirs(image_labeled_dir, exist_ok=True)
+    if os.path.exists(output_dir):
+        shutil.rmtree(output_dir)
+    os.makedirs(output_dir)
 
-    # Initialize the class ID counter
-    class_id_counter = 0
+    cam = setup_scene(config)
 
-    # Open the class mapping file
-    with open(os.path.join(output_dir, 'class_mapping.txt'), 'w') as class_mapping_file:
-        # Iterate through all .dae files in the model_dir
-        for model_path in glob.glob(os.path.join(config['model_dir'], '*.dae')):
-            obj = import_dae_object(model_path)
-            model_name = os.path.splitext(os.path.basename(model_path))[0]
+    background_plane = create_background_plane(config)
 
-            # Assign a unique class ID to the current object
-            current_class_id = class_id_counter
-            class_id_counter += 1
+    # Create the output subdirectories
+    image_path = "images/train"
+    label_path = "labels/train"
+    image_path_val = "images/val"
+    label_path_val = "labels/val"
+    image_labeled_path = "images_labeled/train"
+    image_with_axes_path = "images_with_axes/train"
+    poses_path = "poses/train"
+    os.makedirs(os.path.join(config['output_dir'], image_path), exist_ok=True)
+    os.makedirs(os.path.join(config['output_dir'], label_path), exist_ok=True)
+    os.makedirs(os.path.join(config['output_dir'], image_labeled_path), exist_ok=True)
+    os.makedirs(os.path.join(config['output_dir'], image_with_axes_path), exist_ok=True)
+    os.makedirs(os.path.join(config['output_dir'], poses_path), exist_ok=True)
+    os.makedirs(os.path.join(config['output_dir'], image_path_val), exist_ok=True)
+    os.makedirs(os.path.join(config['output_dir'], label_path_val), exist_ok=True)
 
-            # Write the class ID and object's filename to the class mapping file
-            class_mapping_file.write(f"{current_class_id} {model_name}\n")
+    class_id = 0
+    class_id_mapping = {}
 
-            for i in range(config['num_samples']):
-                set_random_camera_pose(config)
-                set_random_lighting(config)
-                set_random_background(background_plane, config)
-                apply_random_texture(obj, config)
-                set_random_pose(obj, config['pose_randomization']['location'], config['pose_randomization']['rotation'])
+    # Iterate through all .dae files in the model_dir
+    for model_path in glob.glob(os.path.join(config['model_dir'], '*.dae')):
+        obj = import_dae_object(model_path)
+        model_name = os.path.splitext(os.path.basename(model_path))[0]
 
-                output_prefix = f"{model_name}_{i:04}"
-                output_image_path = os.path.join(image_dir, f"{output_prefix}.png")
-                render_image(output_image_path)
+        class_id_mapping[class_id] = model_name
 
-                # Save the object's 2D bounding box in YOLO format
-                img_width, img_height = config['resolution_x'], config['resolution_y']
-                bounding_box_2d = compute_2d_bounding_box(obj)
-                yolo_bbox = convert_bbox_to_yolo_format(bounding_box_2d, img_width, img_height)
+        for i in range(config['num_samples']):
+            
+            set_random_camera_pose(config)
+            set_random_lighting(config)
+            set_random_background(background_plane, config)
+            apply_random_texture(obj, config)
+            set_random_pose(obj, config['pose_randomization']['location'], config['pose_randomization']['rotation'])
 
-                with open(os.path.join(label_dir, f"{output_prefix}.txt"), "w") as label_file:
-                    label_file.write(f"{current_class_id} {yolo_bbox[0]} {yolo_bbox[1]} {yolo_bbox[2]} {yolo_bbox[3]}\n")
+            # Save the rendered image
+            output_prefix = f"{model_name}_{i:04}"
+            output_image_path = os.path.join(config['output_dir'], image_path, f"{output_prefix}.png")
+            render_image(output_image_path)
+
+            # Save the object's 2D bounding box and 3D pose information as a label in YOLO format
+            bounding_box_2d = compute_2d_bounding_box(obj)
+            yolo_bbox = convert_bbox_to_yolo_format(bounding_box_2d, config['resolution_x'], config['resolution_y'])
+            output_label_path = os.path.join(config['output_dir'], label_path, f"{output_prefix}.txt")
+            with open(output_label_path, 'w') as label_file:
+                label_file.write(f"{class_id} {' '.join(map(str, yolo_bbox))}\n")
+
+            # Save the rendered image with the bounding box
+            img = Image.open(output_image_path)
+            draw = ImageDraw.Draw(img)
+            bbox_color = (255, 0, 0)  # Red color for the bounding box
+            draw.rectangle(bounding_box_2d, outline=bbox_color, width=2)  # Change width as needed
+            
+            # Save the image with the bounding box
+            output_image_with_bbox_path = os.path.join(config['output_dir'], image_labeled_path, f"{output_prefix}_with_bbox.png")
+            img.save(output_image_with_bbox_path)
+
+            # Draw 3D axes on the image with the bounding box and save it in a separate folder
+            draw_3d_axes(output_image_with_bbox_path, obj, os.path.join(config['output_dir'], image_with_axes_path), bpy.context.scene)
+
+            # Save the object's pose information
+            output_pose_path = os.path.join(config['output_dir'], poses_path, f'{model_name}_pose_{i:04d}.txt')
+            with open(output_pose_path, 'w') as pose_file:
+                pose_file.write(f"location: {obj.location}\n")
+                pose_file.write(f"rotation_euler: {obj.rotation_euler}\n")
 
 
-                 # Save the image with the bounding box
-                img = Image.open(output_image_path)
-                draw = ImageDraw.Draw(img)
-                bbox_color = (255, 0, 0)  # Red color for the bounding box
-                draw.rectangle(bounding_box_2d, outline=bbox_color, width=2)  # Change width as needed
-                
-                # Save the image with the bounding box to the images_labeled folder
-                img.save(os.path.join(image_labeled_dir, f"{output_prefix}_with_bbox.png"))
+        # Delete the current object before importing the next one
+        bpy.ops.object.select_all(action='DESELECT')
+        obj.select_set(True)
+        bpy.ops.object.delete()
+
+        # Increment the class ID for the next object
+        class_id += 1
 
 
-            # Delete the current object before importing the next one
-            bpy.ops.object.select_all(action='DESELECT')
-            obj.select_set(True)
-            bpy.ops.object.delete()
+    # Splitting the dataset into training and validation sets
+    split_ratio = config['validation_split']
+    img_dir = os.path.join(config['output_dir'], image_path)
+    val_dir = os.path.join(config['output_dir'], image_path_val)
+    os.makedirs(val_dir, exist_ok=True)
 
-def convert_bbox_to_yolo_format(bbox, img_width, img_height):
-    x1, y1, x2, y2 = bbox
-    x_center = (x1 + x2) / (2 * img_width)
-    y_center = (y1 + y2) / (2 * img_height)
-    width = (x2 - x1) / img_width
-    height = (y2 - y1) / img_height
-    return [x_center, y_center, width, height]
+    img_files = [f for f in os.listdir(img_dir) if f.endswith('.png')]
+    random.shuffle(img_files)
+    num_val_images = int(len(img_files) * split_ratio)
+
+    for i in range(num_val_images):
+        img_file = img_files[i]
+        label_file = img_file.replace('.png', '.txt')
+        shutil.move(os.path.join(img_dir, img_file), os.path.join(val_dir, img_file))
+        shutil.move(os.path.join(config['output_dir'], label_path, label_file), os.path.join(config['output_dir'], label_path_val, label_file))
+
+    # Save class and path information to a YAML file
+    dataset_info = {
+        # 'path': os.path.abspath(config['output_dir']),
+        'path': config['output_dir'],
+        'train': image_path,
+        'val': image_path_val,
+        'test': None,
+        'names': class_id_mapping
+    }
+
+    # for i, name in enumerate(class_id_mapping):
+    #     print(f"Class ID {i}: {name}")
+    
+    # print(class_id_mapping)
+
+    with open(os.path.join(config['output_dir'], 'classes.yaml'), 'w') as f:
+        f.write("# My Dataset YOLO 🚀, GPL-3.0 license\n")
+        f.write("# Example usage: yolo train data=classes.yaml\n")
+        # f.write("# parent\n")
+        # f.write("# ├── generate (path of generate_dataset function)\n")
+        # f.write("# └── datasets\n")
+        # f.write("#     └── my_dataset\n\n")
+        yaml.dump(dataset_info, f, default_flow_style=False)
 
 
 
