@@ -1,6 +1,6 @@
 model_dir: "../assets/"
 output_dir: "/home/gebmer/repos/assembly_vision/dataset"
-num_samples: 2
+num_samples: 20
 validation_split: 0.2
 backgrounds_dir: "/home/gebmer/Pictures/unlabeled2017/"
 texture_dir: "/home/gebmer/Pictures/dtd-r1.0.1/dtd/images/porous/"

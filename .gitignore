@@ -78,5 +78,6 @@ Pipfile.lock
 .idea/
 
 
-*/out/*
-*/dataset/*
+dataset/
+tmp/
+runs/
