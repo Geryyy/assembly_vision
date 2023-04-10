@@ -312,6 +312,63 @@ def draw_3d_axes(image_path, obj, output_folder, scene):
     img.save(output_path)
 
 
+def process_cad_obj(config, class_id, model_path, image_path, label_path, image_labeled_path, image_with_axes_path, poses_path):
+    cam = setup_scene(config)
+    background_plane = create_background_plane(config)
+    obj = import_dae_object(model_path)
+    model_name = os.path.splitext(os.path.basename(model_path))[0]
+
+
+    for i in range(config['num_samples']):
+        
+        set_random_camera_pose(config)
+        set_random_lighting(config)
+        set_random_background(background_plane, config)
+        apply_random_texture(obj, config)
+        set_random_pose(obj, config['pose_randomization']['location'], config['pose_randomization']['rotation'])
+
+        # Save the rendered image
+        output_prefix = f"{model_name}_{i:04}"
+        output_image_path = os.path.join(config['output_dir'], image_path, f"{output_prefix}.png")
+        render_image(output_image_path)
+
+        # Save the object's 2D bounding box and 3D pose information as a label in YOLO format
+        bounding_box_2d = compute_2d_bounding_box(obj)
+        yolo_bbox = convert_bbox_to_yolo_format(bounding_box_2d, config['resolution_x'], config['resolution_y'])
+        output_label_path = os.path.join(config['output_dir'], label_path, f"{output_prefix}.txt")
+        with open(output_label_path, 'w') as label_file:
+            label_file.write(f"{class_id} {' '.join(map(str, yolo_bbox))}\n")
+
+        # Save the rendered image with the bounding box
+        img = Image.open(output_image_path)
+        draw = ImageDraw.Draw(img)
+        bbox_color = (255, 0, 0)  # Red color for the bounding box
+        draw.rectangle(bounding_box_2d, outline=bbox_color, width=2)  # Change width as needed
+        
+        # Save the image with the bounding box
+        output_image_with_bbox_path = os.path.join(config['output_dir'], image_labeled_path, f"{output_prefix}_with_bbox.png")
+        img.save(output_image_with_bbox_path)
+
+        # Draw 3D axes on the image with the bounding box and save it in a separate folder
+        draw_3d_axes(output_image_with_bbox_path, obj, os.path.join(config['output_dir'], image_with_axes_path), bpy.context.scene)
+
+        # Save the object's pose information
+        output_pose_path = os.path.join(config['output_dir'], poses_path, f'{model_name}_pose_{i:04d}.txt')
+        with open(output_pose_path, 'w') as pose_file:
+            pose_file.write(f"location: {obj.location}\n")
+            pose_file.write(f"rotation_euler: {obj.rotation_euler}\n")
+
+
+    # Delete the current object before importing the next one
+    bpy.ops.object.select_all(action='DESELECT')
+    obj.select_set(True)
+    bpy.ops.object.delete()
+
+    return model_name, class_id
+
+
+import concurrent.futures
+
 def generate_dataset(config):
     # Clear the dataset folder
     output_dir = config['output_dir']
@@ -319,9 +376,7 @@ def generate_dataset(config):
         shutil.rmtree(output_dir)
     os.makedirs(output_dir)
 
-    cam = setup_scene(config)
-
-    background_plane = create_background_plane(config)
+    
 
     # Create the output subdirectories
     image_path = "images/train"
@@ -342,60 +397,35 @@ def generate_dataset(config):
     class_id = 0
     class_id_mapping = {}
 
-    # Iterate through all .dae files in the model_dir
-    for model_path in glob.glob(os.path.join(config['model_dir'], '*.dae')):
-        obj = import_dae_object(model_path)
-        model_name = os.path.splitext(os.path.basename(model_path))[0]
+    
 
-        class_id_mapping[class_id] = model_name
+    # # Iterate through all .dae files in the model_dir
+    # for model_path in glob.glob(os.path.join(config['model_dir'], '*.dae')):
+        
+    #     model_name, class_id = process_cad_obj(config, class_id, model_path, image_path, label_path, image_labeled_path, image_with_axes_path, poses_path)
+    #     class_id_mapping[class_id] = model_name
 
-        for i in range(config['num_samples']):
-            
-            set_random_camera_pose(config)
-            set_random_lighting(config)
-            set_random_background(background_plane, config)
-            apply_random_texture(obj, config)
-            set_random_pose(obj, config['pose_randomization']['location'], config['pose_randomization']['rotation'])
-
-            # Save the rendered image
-            output_prefix = f"{model_name}_{i:04}"
-            output_image_path = os.path.join(config['output_dir'], image_path, f"{output_prefix}.png")
-            render_image(output_image_path)
-
-            # Save the object's 2D bounding box and 3D pose information as a label in YOLO format
-            bounding_box_2d = compute_2d_bounding_box(obj)
-            yolo_bbox = convert_bbox_to_yolo_format(bounding_box_2d, config['resolution_x'], config['resolution_y'])
-            output_label_path = os.path.join(config['output_dir'], label_path, f"{output_prefix}.txt")
-            with open(output_label_path, 'w') as label_file:
-                label_file.write(f"{class_id} {' '.join(map(str, yolo_bbox))}\n")
-
-            # Save the rendered image with the bounding box
-            img = Image.open(output_image_path)
-            draw = ImageDraw.Draw(img)
-            bbox_color = (255, 0, 0)  # Red color for the bounding box
-            draw.rectangle(bounding_box_2d, outline=bbox_color, width=2)  # Change width as needed
-            
-            # Save the image with the bounding box
-            output_image_with_bbox_path = os.path.join(config['output_dir'], image_labeled_path, f"{output_prefix}_with_bbox.png")
-            img.save(output_image_with_bbox_path)
-
-            # Draw 3D axes on the image with the bounding box and save it in a separate folder
-            draw_3d_axes(output_image_with_bbox_path, obj, os.path.join(config['output_dir'], image_with_axes_path), bpy.context.scene)
-
-            # Save the object's pose information
-            output_pose_path = os.path.join(config['output_dir'], poses_path, f'{model_name}_pose_{i:04d}.txt')
-            with open(output_pose_path, 'w') as pose_file:
-                pose_file.write(f"location: {obj.location}\n")
-                pose_file.write(f"rotation_euler: {obj.rotation_euler}\n")
+    #     # Increment the class ID for the next object
+    #     class_id += 1
 
 
-        # Delete the current object before importing the next one
-        bpy.ops.object.select_all(action='DESELECT')
-        obj.select_set(True)
-        bpy.ops.object.delete()
+    # Get the list of DAE files
+    dae_files = glob.glob(os.path.join(config['model_dir'], '*.dae'))
+    # Create a ProcessPoolExecutor for parallel processing
+    with concurrent.futures.ProcessPoolExecutor() as executor:
+        futures = [
+            executor.submit(process_cad_obj, config, class_id, model_path, image_path, label_path, image_labeled_path, image_with_axes_path, poses_path)
+            for class_id, model_path in enumerate(dae_files)
+        ]
 
-        # Increment the class ID for the next object
-        class_id += 1
+        for future in concurrent.futures.as_completed(futures):
+            mapping = future.result()
+            class_id = mapping[1]
+            model_name = mapping[0]
+            class_id_mapping[class_id] = model_name
+            print(future.result())
+            # future.result()
+        
 
 
     # Splitting the dataset into training and validation sets

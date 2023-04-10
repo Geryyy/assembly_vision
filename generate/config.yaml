@@ -1,7 +1,7 @@
 model_dir: "../assets/"
 # output_dir: "/home/gebmer/repos/assembly_vision/dataset"
 output_dir: "/home/geraldebmer/repos/assembly_vision/dataset"
-num_samples: 10
+num_samples: 500
 validation_split: 0.2
 # backgrounds_dir: "/home/gebmer/Pictures/unlabeled2017/"
 # texture_dir: "/home/gebmer/Pictures/dtd-r1.0.1/dtd/images/porous/"
@@ -11,13 +11,13 @@ image_extensions: [".png", ".jpg", ".jpeg"]
 resolution_x: 640
 resolution_y: 480
 
-background_distance: 10.0
+background_distance: 5.0
 # lighting
 lighting:
   type: "random" # anything else..
-  light_type: "AREA" # SUN
+  light_type: "SUN" # SUN, AREA
   num_lights: 1
-  light_distance: 1.0
+  light_distance: 10.0
   light_size: 1
   light_color: [1, 1, 1]
   light_energy_min: 0.01
